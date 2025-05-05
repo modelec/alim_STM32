@@ -21,7 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -59,7 +59,7 @@ static void MX_USART2_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+uint32_t BAU_State = 0;
 /* USER CODE END 0 */
 
 /**
@@ -94,6 +94,12 @@ int main(void)
   MX_TIM3_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
+  if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_SET){
+	  BAU_State = 0;
+  }else{
+	  BAU_State = 1;
+  }
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -292,30 +298,32 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 uint32_t last_debounce_time = 0;
-const uint32_t debounce_delay = 70;  // 50ms d'antirebond
+const uint32_t debounce_delay = 200;  // 50ms d'antirebond
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-    if (GPIO_Pin == GPIO_PIN_1)
-    {
-        uint32_t current_time = HAL_GetTick();
-        if (current_time - last_debounce_time > debounce_delay)
-        {
-            last_debounce_time = current_time;
+	if (GPIO_Pin == GPIO_PIN_1)
+	    {
+	        uint32_t current_time = HAL_GetTick();
+	        if (current_time - last_debounce_time > debounce_delay)
+	        {
+	            last_debounce_time = current_time;
 
-            GPIO_PinState state = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1);
-            if (state == GPIO_PIN_SET)
-            {
-                const char *msg = "0\r\n";  // bouton appuyé
-                HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-            }
-            else
-            {
-                const char *msg = "1\r\n";  // bouton relâché
-                HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-            }
-        }
-    }
+	            //GPIO_PinState state = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1);
+
+	            if(BAU_State == 0){
+	            	const char *msg = "1\r\n";  // bouton appuyé
+	            	BAU_State = 1;
+	            	HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	            }else{
+	            	const char *msg = "0\r\n";  // bouton appuyé
+	            	BAU_State = 0;
+	            	HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	            }
+
+
+	        }
+	    }
 }
 
 /* USER CODE END 4 */
