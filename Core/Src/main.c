@@ -21,8 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <string.h>
-#include "tempSensor.h"
+//#include <string.h>
+//#include "tempSensor.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -97,7 +97,7 @@ int main(void)
   MX_GPIO_Init();
   MX_TIM3_Init();
   MX_USART2_UART_Init();
-  MX_I2C1_Init();
+  //MX_I2C1_Init(); TODO c'est ça qu'il faut modifier
   /* USER CODE BEGIN 2 */
   if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_SET){
 	  BAU_State = 0;
@@ -112,9 +112,9 @@ int main(void)
   while (1)
   {
 
-	  float temp = MCP9808_ReadTemp(&hi2c1);
-	  char msg[16];
-	  //HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+	 float temp = MCP9808_ReadTemp(&hi2c1);
+	 char msg[16];
+	 HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);  //message à remplir (fonction de transformation de float vers string qui foire
 	  /*
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
 	HAL_Delay(500);
@@ -355,7 +355,7 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 uint32_t last_debounce_time = 0;
-const uint32_t debounce_delay = 1000;  // 50ms d'antirebond
+const uint32_t debounce_delay = 1000;  // 1s d'antirebond
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
