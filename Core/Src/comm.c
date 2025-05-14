@@ -1,32 +1,16 @@
+#include "comm.h"
 #include "main.h"
+#include "alim.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <ctype.h>
 #include <math.h>
 
-extern UART_HandleTypeDef huart2;
-extern I2C_HandleTypeDef hi2c1;
-
-typedef enum errorCode {
-	COMM_SUCCESS,
-	COMM_ERROR
-} errorCode ;
-
-#define RX_BUFFER_SIZE 128
 static char rxBuffer[RX_BUFFER_SIZE];
 static uint8_t rxIndex = 0;
 static char rxChar;
-
-// Prototypes
-void handle_uart_message(const char *msg);
-void handle_get(const char *xxx, const char *yyy);
-void handle_set(const char *xxx, const char *yyy, const char *val);
-void send_set_response(const char *xxx, const char *yyy, int val);
-void send_error_response(void);
-errorCode read_bau_state(int* val);
-errorCode read_mcp9808_temp(float* val);
-
 
 // Lancer la réception UART
 void uart_start_reception() {
@@ -71,19 +55,94 @@ void handle_uart_message(const char *msg) {
 void handle_get(const char *xxx, const char *yyy) {
     if (strcmp(xxx, "BAU") == 0 && strcmp(yyy, "STATE") == 0) {
     	int val = 0;
-    	errorCode res = read_bau_state(&val);
-    	if(res == COMM_SUCCESS){
+    	HAL_StatusTypeDef res = read_bau_state(&val);
+    	if(res == HAL_OK){
     		send_set_response(xxx, yyy, val);
     		return;
     	}
     } else if (strcmp(xxx, "TEMP") == 0 && strcmp(yyy, "CELS") == 0) {
         float temp = -1000.0f;
-        errorCode res = read_mcp9808_temp(&temp);
-        if (res == COMM_SUCCESS) {
+        HAL_StatusTypeDef res = read_mcp9808_temp(&temp);
+        if (res == HAL_OK) {
             int temp_dixieme = (int)(temp * 10.0f + 0.5f);
             send_set_response(xxx, yyy, temp_dixieme);
             return;
         }
+    } else {
+    	// Concerne les entrees sorties
+
+    	i2cAdress address;
+    	float currentLSB;
+    	bool validZone = false;
+    	uint16_t controlPin;
+    	uint16_t validPin;
+
+    	// Selection zone mesure
+    	if(strcmp(xxx, "IN1") == 0){
+    		address = I2C_IN1;
+    		currentLSB = 0.000610f;
+    		validPin = GPIO_PIN_5;
+    		validZone = true;
+    	} else if (strcmp(xxx, "IN2") == 0){
+    		address = I2C_IN2;
+    		currentLSB = 0.000610f;
+    		validPin = GPIO_PIN_6;
+    		validZone = true;
+    	} else if (strcmp(xxx, "OUT5V") == 0){
+    		address = I2C_OUT5V;
+    		currentLSB = 0.000185f;
+    		controlPin = GPIO_PIN_0;
+    		validZone = true;
+    	} else if (strcmp(xxx, "OUT5V1") == 0){
+    		address = I2C_OUT5V1;
+    		currentLSB = 0.000185f;
+    		validZone = true;
+    	} else if (strcmp(xxx, "OUT12V") == 0){
+    		address = I2C_OUT12V;
+    		currentLSB = 0.000125f;
+    		controlPin = GPIO_PIN_10;
+    		validZone = true;
+    	} else if (strcmp(xxx, "OUT24") == 0){
+    		address = I2C_OUT24V;
+    		currentLSB = 0.000040f;
+    		controlPin = GPIO_PIN_11;
+    		validZone = true;
+    	}
+
+    	// Selection type mesure
+    	if(strcmp(yyy, "VOLT") == 0 && validZone){
+    		float val = 0.0f;
+			HAL_StatusTypeDef res = read_ina236_voltage(address, &val);
+			if (res == HAL_OK) {
+				send_set_response(xxx, yyy, val);
+				return;
+			}
+    	} else if (strcmp(yyy, "AMPS") == 0 && validZone){
+    		float val = 0.0f;
+			HAL_StatusTypeDef res = read_ina236_current(address, currentLSB, &val);
+			if (res == HAL_OK) {
+				send_set_response(xxx, yyy, val);
+				return;
+			}
+    	} else if (strcmp(yyy, "VALID") == 0 && validZone){
+    		int val = 0;
+    		if((strcmp(xxx, "IN1") == 0) || (strcmp(xxx, "IN2") == 0)){
+    			val = (HAL_GPIO_ReadPin(GPIOA, validPin) == GPIO_PIN_RESET) ? 1 : 0;
+    		} else {
+    			val = 1;
+    		}
+    		send_set_response(xxx, yyy, val);
+    		return;
+    	} else if (strcmp(yyy, "STATE") == 0 && validZone){
+    		int val = 0;
+    		if((strcmp(xxx, "OUT5V") == 0) || (strcmp(xxx, "OUT12V") == 0) || (strcmp(xxx, "OUT24V") == 0)){
+    			val = (HAL_GPIO_ReadPin(GPIOA, controlPin) == GPIO_PIN_RESET) ? 1 : 0;
+    		} else {
+    			val = 1;
+    		}
+    		send_set_response(xxx, yyy, val);
+    		return;
+    	}
     }
     send_error_response();
 }
@@ -97,9 +156,20 @@ void handle_set(const char *xxx, const char *yyy, const char *val) {
 		(strcmp(xxx, "OUT12V") == 0 && strcmp(yyy, "STATE") == 0) ||
 		(strcmp(xxx, "OUT24V") == 0 && strcmp(yyy, "STATE") == 0))) {
 
-    	// Appliquer commande...
+    	GPIO_PinState pin_state = (v == 1) ? GPIO_PIN_RESET : GPIO_PIN_SET; // Niveau actif bas
+    	int success = 0;
 
-    	int success = 1;
+    	if (strcmp(xxx, "OUT5V") == 0 && strcmp(yyy, "STATE") == 0) {
+    	    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, pin_state);
+    	    success = 1;
+    	} else if (strcmp(xxx, "OUT12V") == 0 && strcmp(yyy, "STATE") == 0) {
+    	    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, pin_state);
+    	    success = 1;
+    	} else if (strcmp(xxx, "OUT24V") == 0 && strcmp(yyy, "STATE") == 0) {
+    	    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_11, pin_state);
+    	    success = 1;
+    	}
+
         if (success) {
             char msg[64];
             snprintf(msg, sizeof(msg), "OK;%s;%s;%d\n", xxx, yyy, v);
@@ -124,33 +194,3 @@ void send_error_response() {
     const char *msg = "KO;PARSE;ERROR;0\n";
     HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
 }
-
-errorCode read_bau_state(int* val){
-	if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_SET){
-		*val = 0;
-		return COMM_SUCCESS;
-	} else {
-		*val = 1;
-		return COMM_SUCCESS;
-	}
-	return COMM_ERROR;
-}
-
-errorCode read_mcp9808_temp(float* temp) {
-    uint8_t reg = 0x05;
-    uint8_t data[2];
-
-    if (HAL_I2C_Master_Transmit(&hi2c1, 0x18 << 1, &reg, 1, HAL_MAX_DELAY) != HAL_OK){
-    	return COMM_ERROR;
-    }
-    if (HAL_I2C_Master_Receive(&hi2c1, 0x18 << 1, data, 2, HAL_MAX_DELAY) != HAL_OK){
-    	return COMM_ERROR;
-    }
-
-    uint16_t raw = (data[0] << 8) | data[1];
-    raw &= 0x1FFF;
-
-    *temp = raw & 0x1000 ? (raw - 8192) * 0.0625f : raw * 0.0625f;
-    return COMM_SUCCESS;
-}
-
